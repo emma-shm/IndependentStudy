@@ -2,214 +2,174 @@ import gym
 from stable_baselines3 import PPO
 from satellite_control_env import SatelliteControlEnv
 import matplotlib.pyplot as plt
+import numpy as np
 
+# TRAINING
+env = SatelliteControlEnv()  # Create the environment
+model = PPO("MlpPolicy", env, verbose=1)  # Instantiate the PPO agent
+model.learn(total_timesteps=100000)  # Training the model
+model.save("satellite_rl_model")  # Save the trained model
 
-# Create the environment
-env = SatelliteControlEnv()
-# Instantiate the PPO agent
-model = PPO("MlpPolicy", env, verbose=1)
-# Train the model
-model.learn(total_timesteps=100000)
-# Save the trained model
-model.save("satellite_rl_model")
-# Optionally, test the model after training
-obs = env.reset()
-done = False
-while not done:
-    action, _states = model.predict(obs)
-    obs, rewards, done, info = env.step(action)
-    episode_rewards = []  # List to store reward per episode
-    for episode in range(100000):
-        total_reward = 0
-        state = env.reset()
-        done = False
-        while not done:
-            action = model.select_action(state)
-            next_state, reward, done, _ = env.step(action)
-            total_reward += reward  # Accumulate reward for the episode
-            state = next_state
-        episode_rewards.append(total_reward)  # Add the total reward of this episode
-    # print(f"Action: {action}, New state: {obs}, Reward: {rewards}")
+# EVALUATION & DATA COLLECTION ACROSS MULTIPLE EPISODES
+n_eval_episodes = 50  # Number of episodes to evaluate
+max_steps_per_episode = 1000  # Maximum timesteps per episode
 
-altitudes = []
-velocities = []
-fuel_usage = []
-# Simulate for visualization
-obs = env.reset()
-done = False
-while not done:
-    action, _states = model.predict(obs)
-    obs, rewards, done, info = env.step(action)
-    altitudes.append(obs[0])
-    velocities.append(obs[1])
-    fuel_usage.append(action[0])
+# Lists to store episode-level metrics
+episode_rewards = []
+episode_altitudes = []
+episode_velocities = []
+episode_thrusts = []
+episode_final_altitudes = []
+episode_fuel_consumed = []
+episode_altitude_errors = []  # New list to track altitude errors
 
-# Plot the results
-plt.figure(figsize=(10,6))
-plt.subplot(3, 1, 1)
-plt.plot(altitudes)
-plt.title("Altitude vs. Time")
-plt.subplot(3, 1, 2)
-plt.plot(velocities)
-plt.title("Velocity vs. Time")
-plt.subplot(3, 1, 3)
-plt.plot(fuel_usage)
-plt.title("Fuel Usage (Thrust) vs. Time")
-plt.tight_layout()
-plt.show()
+# Variables to track the best episode
+best_reward = float('-inf')
+best_altitude_error = float('inf')
+best_reward_idx = -1
+best_altitude_idx = -1
 
-plt.plot(episode_rewards)  # Plot the total reward for each episode
+for episode in range(n_eval_episodes):
+    # Reset for new episode
+    obs = env.reset()
+    done = False
+    episode_reward = 0
+
+    # Lists to store timestep data for this episode
+    altitudes = []
+    velocities = []
+    thrusts = []
+
+    initial_mass = obs[2]  # Get initial mass
+    step_count = 0
+
+    # Run the episode
+    while not done and step_count < max_steps_per_episode:
+        action, _states = model.predict(
+            obs)  # giving the current observed state of the satellite to the model, which then feeds that to the
+        # optimized policy network to get the action; that action is then returned
+        obs, reward, done, info = env.step(action)  # updating environment by one timestep based on agent's action
+
+        # Store data
+        altitudes.append(obs[0])  # Altitude
+        velocities.append(obs[1])  # Velocity
+        thrusts.append(action[0])  # Thrust
+
+        episode_reward += reward
+        step_count += 1
+
+    # Calculate altitude error (average distance from target)
+    altitude_error = np.mean([abs(alt - 400000) for alt in altitudes])
+    episode_altitude_errors.append(altitude_error)
+
+    # Store episode results
+    episode_rewards.append(episode_reward)
+    episode_altitudes.append(altitudes)
+    episode_velocities.append(velocities)
+    episode_thrusts.append(thrusts)
+    episode_final_altitudes.append(altitudes[-1])  # Final altitude
+    episode_fuel_consumed.append(initial_mass - obs[2])  # Fuel consumed
+
+    # Track best episodes
+    if episode_reward > best_reward:
+        best_reward = episode_reward
+        best_reward_idx = episode
+
+    if altitude_error < best_altitude_error:
+        best_altitude_error = altitude_error
+        best_altitude_idx = episode
+
+    print(
+        f"Episode {episode + 1}: Reward={episode_reward:.2f}, Steps={step_count}, Final Altitude={altitudes[-1]:.2f}, Altitude Error={altitude_error:.2f}")
+
+# Calculate the best overall episode (weighted combination)
+# Normalize metrics to 0-1 range
+norm_rewards = (np.array(episode_rewards) - min(episode_rewards)) / (
+            max(episode_rewards) - min(episode_rewards)) if max(episode_rewards) > min(episode_rewards) else np.zeros(
+    n_eval_episodes)
+norm_errors = 1 - (np.array(episode_altitude_errors) - min(episode_altitude_errors)) / (
+            max(episode_altitude_errors) - min(episode_altitude_errors)) if max(episode_altitude_errors) > min(
+    episode_altitude_errors) else np.zeros(n_eval_episodes)
+
+# Calculate combined score (70% reward, 30% altitude maintenance)
+combined_scores = 0.7 * norm_rewards + 0.3 * norm_errors
+best_overall_idx = np.argmax(combined_scores)
+
+# Print information about the best episodes
+print("\nBest Episodes Summary:")
+print(
+    f"Best by reward: Episode {best_reward_idx + 1}, Reward={episode_rewards[best_reward_idx]:.2f}, Altitude Error={episode_altitude_errors[best_reward_idx]:.2f}")
+print(
+    f"Best by altitude: Episode {best_altitude_idx + 1}, Reward={episode_rewards[best_altitude_idx]:.2f}, Altitude Error={episode_altitude_errors[best_altitude_idx]:.2f}")
+print(
+    f"Best overall: Episode {best_overall_idx + 1}, Reward={episode_rewards[best_overall_idx]:.2f}, Altitude Error={episode_altitude_errors[best_overall_idx]:.2f}")
+
+# VISUALIZATION ACROSS EPISODES
+
+# 1. Plot reward progression across episodes
+plt.figure(figsize=(10, 6))
+plt.plot(range(1, n_eval_episodes + 1), episode_rewards)
+plt.axvline(x=best_overall_idx + 1, color='g', linestyle='--', label='Best Overall Episode')
 plt.xlabel('Episode')
 plt.ylabel('Total Reward')
-plt.title('Reward per Episode')
+plt.title('Reward Progression Across Episodes')
+plt.legend()
 plt.grid(True)
+plt.savefig("reward_progression.png")
 plt.show()
 
+# 2. Plot final altitude for each episode
+plt.figure(figsize=(10, 6))
+plt.plot(range(1, n_eval_episodes + 1), episode_final_altitudes)
+plt.axhline(y=400000, color='r', linestyle='--', label='Target Altitude')
+plt.axvline(x=best_overall_idx + 1, color='g', linestyle='--', label='Best Overall Episode')
+plt.xlabel('Episode')
+plt.ylabel('Final Altitude (m)')
+plt.title('Final Altitude Achieved in Each Episode')
+plt.legend()
+plt.grid(True)
+plt.savefig("final_altitudes.png")
+plt.show()
 
+# 3. Plot fuel consumption across episodes
+plt.figure(figsize=(10, 6))
+plt.plot(range(1, n_eval_episodes + 1), episode_fuel_consumed)
+plt.axvline(x=best_overall_idx + 1, color='g', linestyle='--', label='Best Overall Episode')
+plt.xlabel('Episode')
+plt.ylabel('Fuel Consumed (kg)')
+plt.title('Fuel Efficiency Across Episodes')
+plt.legend()
+plt.grid(True)
+plt.savefig("fuel_consumed.png")
+plt.show()
 
+# 4. NEW: Plot trajectory of the best overall episode
+plt.figure(figsize=(15, 12))
 
+# Plot altitude trajectory
+plt.subplot(3, 1, 1)
+plt.plot(episode_altitudes[best_overall_idx], linewidth=1)
+plt.axhline(y=400000, color='r', linestyle='--', label='Target Altitude')
+plt.title(f"Altitude Trajectory - Best Episode {best_overall_idx + 1}")
+plt.ylabel('Altitude (m)')
+plt.legend()
+plt.grid(True)
 
+# Plot velocity
+plt.subplot(3, 1, 2)
+plt.plot(episode_velocities[best_overall_idx], linewidth=1)
+plt.title(f"Velocity - Best Episode {best_overall_idx + 1}")
+plt.ylabel('Velocity (m/s)')
+plt.grid(True)
 
-# import numpy as np
-# from scipy.integrate import odeint
-# import gymnasium as gym
-# from gymnasium import spaces
-# from stable_baselines3 import PPO
-# from stable_baselines3.common.env_checker import check_env
-# from stable_baselines3.common.logger import configure
-# import matplotlib.pyplot as plt
-#
-# model = PPO("MlpPolicy", "CartPole-v1").learn(total_timesteps=1_000) # When you train an agent using SB3, you pass a total_timesteps parameter to the learn() method which defines the training budget for the agent (how many interaction with the environment are allowed)
-#
-#
-# # Custom Gym Environment for Satellite in LEO
-# class SatelliteEnv(gym.Env):
-#     def __init__(self):
-#         super(SatelliteEnv, self).__init__()
-#         # State: [angle (theta), angular velocity (omega), signal strength]
-#         self.observation_space = spaces.Box(
-#             low=np.array([-np.pi, -10.0, 0.0]),
-#             high=np.array([np.pi, 10.0, 1.0]),
-#             dtype=np.float32
-#         )
-#         # Action: torque (tau)
-#         self.action_space = spaces.Box(
-#             low=np.array([-1.0]),
-#             high=np.array([1.0]),
-#             dtype=np.float32
-#         )
-#         # Satellite parameters
-#         self.I = 1.0  # Moment of inertia (kg·m²)
-#         self.max_steps = 1000  # Maximum steps per episode
-#         self.step_count = 0
-#         self.state = None
-#         self.dt = 0.1  # Time step (seconds)
-#
-#     def reset(self):
-#         # Initialize state: [angle, angular velocity, signal strength]
-#         self.state = np.array([
-#             np.random.uniform(-np.pi, np.pi),  # Random initial angle
-#             np.random.uniform(-1.0, 1.0),      # Random initial angular velocity
-#             0.0                                # Initial signal strength
-#         ])
-#         self.step_count = 0
-#         return self.state
-#
-#     def step(self, action):
-#         theta, omega, _ = self.state
-#         tau = np.clip(action[0], -1.0, 1.0)  # Torque
-#
-#         # Update dynamics: angular acceleration = torque / moment of inertia
-#         alpha = tau / self.I
-#         omega_new = omega + alpha * self.dt
-#         theta_new = theta + omega_new * self.dt
-#
-#         # Keep angle in [-pi, pi]
-#         theta_new = ((theta_new + np.pi) % (2 * np.pi)) - np.pi
-#
-#         # Calculate signal strength (Gaussian centered at theta = 0)
-#         signal = np.exp(-theta_new**2 / 0.5)
-#
-#         # Update state
-#         self.state = np.array([theta_new, omega_new, signal])
-#
-#         # Calculate reward
-#         reward = signal - 0.1 * tau**2  # Maximize signal, penalize torque
-#
-#         self.step_count += 1
-#         done = self.step_count >= self.max_steps
-#
-#         info = {}
-#         return self.state, reward, done, info
-#
-#     def render(self, mode='human'):
-#         pass  # Optional: Add visualization later
-#
-# # Main script
-# if __name__ == "__main__":
-#     # Create environment
-#     env = SatelliteEnv()
-#
-#     # Check environment for compatibility
-#     check_env(env)
-#
-#     # Set up logging for TensorBoard
-#     logger = configure("./ppo_satellite_logs", ["tensorboard"])
-#
-#     # Initialize PPO model
-#     model = PPO(
-#         policy="MlpPolicy",  # Multi-layer perceptron policy
-#         env=env,
-#         learning_rate=3e-4,
-#         n_steps=2048,
-#         batch_size=64,
-#         n_epochs=10,
-#         gamma=0.99,
-#         verbose=1
-#     )
-#     model.set_logger(logger)
-#
-#     # Train the model
-#     model.learn(total_timesteps=100000, log_interval=10)
-#
-#     # Save the model
-#     model.save("ppo_satellite")
-#
-#     # Test the model with visualization
-#     env = SatelliteEnv()
-#     obs = env.reset()
-#     states = [obs]
-#     rewards = []
-#     total_reward = 0
-#
-#     for _ in range(1000):
-#         action, _ = model.predict(obs)
-#         obs, reward, done, _ = env.step(action)
-#         states.append(obs)
-#         rewards.append(reward)
-#         total_reward += reward
-#         if done:
-#             break
-#
-#     # Print results
-#     print(f"Total reward: {total_reward}")
-#     print(f"Final state: angle={obs[0]:.2f} rad, velocity={obs[1]:.2f} rad/s, signal={obs[2]:.2f}")
-#
-#     # Plot results
-#     states = np.array(states)
-#     t = np.arange(len(states)) * env.dt
-#
-#     plt.figure(figsize=(12, 8))
-#     plt.subplot(3, 1, 1)
-#     plt.plot(t, states[:, 0])
-#     plt.ylabel("Angle (rad)")
-#     plt.subplot(3, 1, 2)
-#     plt.plot(t, states[:, 1])
-#     plt.ylabel("Angular Velocity (rad/s)")
-#     plt.subplot(3, 1, 3)
-#     plt.plot(t, states[:, 2])
-#     plt.ylabel("Signal Strength")
-#     plt.xlabel("Time (s)")
-#     plt.tight_layout()
-#     plt.savefig("satellite_performance.png")
-#     plt.show()
+# Plot thrust actions
+plt.subplot(3, 1, 3)
+plt.plot(episode_thrusts[best_overall_idx], linewidth=1)
+plt.title(f"Control Actions (Thrust) - Best Episode {best_overall_idx + 1}")
+plt.xlabel('Timestep')
+plt.ylabel('Thrust (m/s²)')
+plt.grid(True)
+
+plt.tight_layout()
+plt.savefig("best_episode_trajectory.png")
+plt.show()
