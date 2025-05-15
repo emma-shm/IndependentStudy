@@ -2,6 +2,10 @@ import gym
 from gym import spaces
 import numpy as np
 class SatelliteControlEnv(gym.Env):
+    '''
+    Custom Environment for controlling a satellite's altitude and velocity that follows gym interface
+    https://stable-baselines3.readthedocs.io/en/master/guide/custom_env.html
+    '''
     def __init__(self, target_altitude=400000, max_thrust=5, max_mass=1000):
         super(SatelliteControlEnv, self).__init__()
         # Parameters for the environment
