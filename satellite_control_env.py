@@ -29,8 +29,11 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
         # Action space: thrust (m/s^2)
         self.action_space = spaces.Box(low=0, high=self.max_thrust, shape=(1,), dtype=np.float32)
         # Observation space: altitude (m), velocity (m/s), mass (kg)
-        self.observation_space = spaces.Box(low=np.array([0, 0, 0]), high=np.array([1000000, 10000, self.max_mass]), dtype=np.float32)
-    
+        # Observation space: altitude (m), velocity magnitude (m/s), mass (kg)
+        self.observation_space = spaces.Box(
+            low=np.array([0, 0, 0]),
+            high=np.array([1000000, 10000, self.max_mass]),
+            dtype=np.float32)
     def step(self, action):
         '''
         Advances the environment by one timestep based on agent's action. Environment includes:
@@ -43,45 +46,83 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
         The method then uses new state and constraint parameters to calculate reward, and a boolean indicates if the episode is done.
         '''
         # defining altitude, velocity, and mass locally at given step using the instance variable self.state, which at any point in time should give the current state of the satellite
-        h = self.state[0] 
-        v = self.state[1]
-        m = self.state[2]
+        # Current state
+        x, y, vx, vy, m = self.state
+        r = np.sqrt(x ** 2 + y ** 2)
 
-        thrust = action[0] # defining thrust to be the first part of the action argument given
+        # Apply thrust in the velocity direction
+        thrust_magnitude = action[0]
+        v_magnitude = np.sqrt(vx ** 2 + vy ** 2)
+        if v_magnitude == 0:  # Avoid division by zero
+            thrust_x, thrust_y = 0, 0
+        else:
+            thrust_x = thrust_magnitude * vx / v_magnitude
+            thrust_y = thrust_magnitude * vy / v_magnitude
 
-        # Taking the current state variables and calculating how they will change in response to action (thrust) based on physics/orbital mechanics
-        T = self.T0 - self.L * h  # Temperature at altitude (K)
-        rho = self.rho_0 * np.exp(-h / self.H)  # calculating atmospheric density (kg/m^3) of satellite at current altitude
-        # Drag force and acceleration
-        F_drag = 0.5 * rho * v**2 * self.C_D * self.A # calculating drag force                                                                                                                                                                                                                                                                                                                           
-        a_drag = F_drag / m
-        # Update velocity (v) based on drag and thrust
-        v_new = v - a_drag * 1 + thrust
-        # Calculate new orbit radius from velocity
-        r_new = self.G * self.M_E / v_new**2
-        h_new = r_new - self.R_E # calculate new altitude from radius
-        # Update mass based on thrust (fuel consumption)
-        m_new = max(10, m - 0.01 * thrust)  # Mass can't go below 10kg
+        # Calculate acceleration from gravity
+        a_gravity_x = -self.G * self.M_E * x / r ** 3
+        a_gravity_y = -self.G * self.M_E * y / r ** 3
 
-        # Reward: penalize deviation from target altitude and fuel usage
-        altitude_error = abs(h_new - self.target_altitude)
-        fuel_penalty = 0.1 * thrust
-        reward = -altitude_error - fuel_penalty # Negative reward for deviation from target altitude and fuel usage
+        # Calculate atmospheric drag
+        altitude = r - self.R_E
+        rho = self.rho_0 * np.exp(-altitude / self.H)
+        drag_magnitude = 0.5 * rho * v_magnitude ** 2 * self.C_D * self.A / m if v_magnitude > 0 else 0
+        drag_x = -drag_magnitude * vx / v_magnitude if v_magnitude > 0 else 0
+        drag_y = -drag_magnitude * vy / v_magnitude if v_magnitude > 0 else 0
 
-        # Check if the satellite is in a valid state
-        done = False
-        if h_new <= 0 or m_new <= 10:  # Satellite crashes or runs out of fuel
-            done = True
-        self.state = np.array([h_new, v_new, m_new]) # Update state with new values
-        return self.state, reward, done, {}
-    
+        # Calculate total acceleration
+        ax = a_gravity_x + drag_x + thrust_x
+        ay = a_gravity_y + drag_y + thrust_y
+
+        # Update velocity and position using Euler integration
+        dt = 1.0  # Time step
+        vx_new = vx + ax * dt
+        vy_new = vy + ay * dt
+        x_new = x + vx_new * dt
+        y_new = y + vy_new * dt
+
+        # Update mass based on thrust
+        m_new = max(10, m - 0.01 * thrust_magnitude)
+
+        # New state
+        self.state = np.array([x_new, y_new, vx_new, vy_new, m_new])
+
+        # Calculate altitude and velocity for observation
+        r_new = np.sqrt(x_new ** 2 + y_new ** 2)
+        altitude_new = r_new - self.R_E
+        v_magnitude_new = np.sqrt(vx_new ** 2 + vy_new ** 2)
+
+        # Observation: [altitude, velocity_magnitude, mass]
+        observation = np.array([altitude_new, v_magnitude_new, m_new])
+
+        # Reward
+        altitude_error = abs(altitude_new - self.target_altitude)
+        fuel_penalty = 0.1 * thrust_magnitude
+        reward = -altitude_error - fuel_penalty
+
+        # Check termination
+        done = altitude_new <= 0 or m_new <= 10
+
+        return observation, reward, done, {}
+
     def reset(self):
-        '''
-        Resets the environment to its initial state. This method is called at the beginning of each episode.
-        '''
-        # Reset state to initial values
-        self.state = np.array([self.target_altitude + 10000, 7800, self.max_mass])  # Same initial conditions
-        return self.state
+        # Desired radius: R_E + (target_altitude + 10000)
+        desired_radius = self.R_E + self.target_altitude + 10000  # 410,000 m above surface
+        # Place satellite on x-axis (y = 0)
+        x = desired_radius
+        y = 0.0
+        # Circular orbit velocity: v = sqrt(G * M_E / r)
+        v_magnitude = np.sqrt(self.G * self.M_E / desired_radius)  # Approx 7800 m/s
+        # Velocity is perpendicular to radius, so along y-axis (vx = 0, vy = v)
+        vx = 0.0
+        vy = v_magnitude
+        # Initial mass
+        m = self.max_mass
+        self.state = np.array([x, y, vx, vy, m])
+        # Observation: [altitude, velocity_magnitude, mass]
+        altitude = desired_radius - self.R_E
+        observation = np.array([altitude, v_magnitude, m])
+        return observation
     
     def render(self):
         pass  # Optionally, render the environment (not implemented here)
