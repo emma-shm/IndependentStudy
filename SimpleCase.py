@@ -45,10 +45,12 @@ for episode in range(n_eval_episodes):
 
     # Run the episode
     while not done and step_count < max_steps_per_episode:
-        action, _states = model.predict(
-            obs)  # giving the current observed state of the satellite to the model, which then feeds that to the
+        action, _states = model.predict(obs)  # giving the current observed state of the satellite to the model, which then feeds that to the
+
         # optimized policy network to get the action; that action is then returned
         obs, reward, done, info = env.step(action)  # updating environment by one timestep based on agent's action
+
+        print(f"Episode {episode + 1}: Action={action}, Altitude={obs[0]:.2f}, Velocity={obs[1]:.2f}, Mass={obs[2]:.2f}, Reward={reward:.2f}")
 
         # Store data
         altitudes.append(obs[0])  # Altitude
@@ -148,7 +150,7 @@ plt.figure(figsize=(15, 12))
 
 # Plot altitude trajectory
 plt.subplot(3, 1, 1)
-plt.plot(episode_altitudes[best_overall_idx], linewidth=1)
+plt.plot(episode_altitudes[best_overall_idx], linewidth=0.5)
 plt.axhline(y=400000, color='r', linestyle='--', label='Target Altitude')
 plt.title(f"Altitude Trajectory - Best Episode {best_overall_idx + 1}")
 plt.ylabel('Altitude (m)')
@@ -157,14 +159,14 @@ plt.grid(True)
 
 # Plot velocity
 plt.subplot(3, 1, 2)
-plt.plot(episode_velocities[best_overall_idx], linewidth=1)
+plt.plot(episode_velocities[best_overall_idx], linewidth=0.5)
 plt.title(f"Velocity - Best Episode {best_overall_idx + 1}")
 plt.ylabel('Velocity (m/s)')
 plt.grid(True)
 
 # Plot thrust actions
 plt.subplot(3, 1, 3)
-plt.plot(episode_thrusts[best_overall_idx], linewidth=1)
+plt.plot(episode_thrusts[best_overall_idx], linewidth=0.5)
 plt.title(f"Control Actions (Thrust) - Best Episode {best_overall_idx + 1}")
 plt.xlabel('Timestep')
 plt.ylabel('Thrust (m/s²)')
