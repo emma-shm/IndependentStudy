@@ -9,11 +9,11 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
     def __init__(self, target_altitude=400000, max_thrust=5, max_mass=1000):
         super(SatelliteControlEnv, self).__init__()   # initializing the parent class (setting up attributes and structures)                        
         # Parameters for the environment
-        self.target_altitude = target_altitude  # Desired altitude in meters (400 km)
+        self.target_altitude = target_altitude  # Desired altitude in meters (400000 m = 400 km)
         self.max_thrust = max_thrust  # Maximum acceleration due to thrust (m/s^2)
         self.max_mass = max_mass  # Maximum mass of the satellite (kg)
         # Constants
-        self.R_E = 6371000  # Radius of Earth (m)
+        self.R_E = 6378137  # Radius of Earth (m)
         self.G = 6.67430e-11  # Gravitational constant (m^3/kg/s^2)
         self.M_E = 5.972e24  # Mass of Earth (kg)
         self.rho_0 = 1.225  # Sea level air density (kg/m^3)
@@ -34,6 +34,7 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
             low=np.array([0, 0, 0]),
             high=np.array([1000000, 10000, self.max_mass]),
             dtype=np.float32)
+
     def step(self, action):
         '''
         Advances the environment by one timestep based on agent's action. Environment includes:
@@ -47,8 +48,8 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
         '''
         # defining altitude, velocity, and mass locally at given step using the instance variable self.state, which at any point in time should give the current state of the satellite
         # Current state
-        x, y, vx, vy, m = self.state
-        r = np.sqrt(x ** 2 + y ** 2)
+        x, y, vx, vy, m = self.state # state is x and y position in meters measured relative to a fixed, geocentric coordinate frame; x and y velocity in meters/sec; mass in kg
+        r = np.sqrt(x ** 2 + y ** 2) # radius is the distance from the center of the Earth to the satellite
 
         # Apply thrust in the velocity direction
         thrust_magnitude = action[0]
@@ -75,7 +76,7 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
         ay = a_gravity_y + drag_y + thrust_y
 
         # Update velocity and position using Euler integration
-        dt = 1.0  # Time step
+        dt = 0.1  # Time step
         vx_new = vx + ax * dt
         vy_new = vy + ay * dt
         x_new = x + vx_new * dt
@@ -87,8 +88,11 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
         # New state
         self.state = np.array([x_new, y_new, vx_new, vy_new, m_new])
 
+        # print(self.state)
+
         # Calculate altitude and velocity for observation
         r_new = np.sqrt(x_new ** 2 + y_new ** 2)
+        print(f"r_new: {r_new}")
         altitude_new = r_new - self.R_E
         v_magnitude_new = np.sqrt(vx_new ** 2 + vy_new ** 2)
 
@@ -98,7 +102,7 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
         # Reward
         altitude_error = abs(altitude_new - self.target_altitude)
         fuel_penalty = 0.1 * thrust_magnitude
-        reward = -altitude_error - fuel_penalty
+        reward = -1.0 * altitude_error - 0.1 * fuel_penalty
 
         # Check termination
         done = altitude_new <= 0 or m_new <= 10
@@ -112,7 +116,7 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
         x = desired_radius
         y = 0.0
         # Circular orbit velocity: v = sqrt(G * M_E / r)
-        v_magnitude = np.sqrt(self.G * self.M_E / desired_radius)  # Approx 7800 m/s
+        v_magnitude = 7670.02 # Initial velocity (m/s) for circular orbit
         # Velocity is perpendicular to radius, so along y-axis (vx = 0, vy = v)
         vx = 0.0
         vy = v_magnitude
