@@ -6,7 +6,7 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
     Custom Environment for controlling a satellite's altitude and velocity that follows gym interface
     https://stable-baselines3.readthedocs.io/en/master/guide/custom_env.html
     '''
-    def __init__(self, target_altitude=400000, max_thrust=5, max_mass=1000):
+    def __init__(self, target_altitude=400000, max_thrust=10, max_mass=1000):
         super(SatelliteControlEnv, self).__init__()   # initializing the parent class (setting up attributes and structures)                        
         # Parameters for the environment
         self.target_altitude = target_altitude  # Desired altitude in meters (400000 m = 400 km)
@@ -27,8 +27,7 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
         # State variables: altitude (m), velocity (m/s), mass (kg)
         self.state = np.array([self.target_altitude + 10000, 7800, self.max_mass])  # Starting 400km + 10km, 7800 m/s orbital speed
         # Action space: thrust (m/s^2)
-        self.action_space = spaces.Box(low=0, high=self.max_thrust, shape=(1,), dtype=np.float32)
-        # Observation space: altitude (m), velocity (m/s), mass (kg)
+        self.action_space = spaces.Box(low=-self.max_thrust, high=self.max_thrust, shape=(2,), dtype=np.float32)
         # Observation space: altitude (m), velocity magnitude (m/s), mass (kg)
         self.observation_space = spaces.Box(
             low=np.array([0, 0, 0]),
@@ -52,24 +51,31 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
         r = np.sqrt(x ** 2 + y ** 2) # radius is the distance from the center of the Earth to the satellite
 
         # Apply thrust in the velocity direction
-        thrust_magnitude = action[0]
-        v_magnitude = np.sqrt(vx ** 2 + vy ** 2)
-        if v_magnitude == 0:  # Avoid division by zero
-            thrust_x, thrust_y = 0, 0
-        else:
-            thrust_x = thrust_magnitude * vx / v_magnitude
-            thrust_y = thrust_magnitude * vy / v_magnitude
+        thrust_x = action[0]  # x-component of thrust acceleration
+        thrust_y = action[1]  # y-component of thrust acceleration
+        thrust_magnitude = np.sqrt(thrust_x ** 2 + thrust_y ** 2)
+
+        v_magnitude = np.sqrt(vx ** 2 + vy ** 2) # magnitude of velocity vector
+        altitude = r - self.R_E # radius of orbit minus radius of earth gives altitude
+
+        # # Calculate thrust in each direction
+        # if altitude > self.target_altitude: # checking to see if the satellite is above the target altitude, in which case, need to slow down so need to apply thrust in the opposite direction of velocity
+        #     thrust_x = -thrust_magnitude * vx / v_magnitude if v_magnitude > 0 else 0
+        #     thrust_y = -thrust_magnitude * vy / v_magnitude if v_magnitude > 0 else 0
+        # else:
+        #     thrust_x = thrust_magnitude * vx / v_magnitude if v_magnitude > 0 else 0
+        #     thrust_y = thrust_magnitude * vy / v_magnitude if v_magnitude > 0 else 0
 
         # Calculate acceleration from gravity
         a_gravity_x = -self.G * self.M_E * x / r ** 3
         a_gravity_y = -self.G * self.M_E * y / r ** 3
 
         # Calculate atmospheric drag
-        altitude = r - self.R_E
-        rho = self.rho_0 * np.exp(-altitude / self.H)
-        drag_magnitude = 0.5 * rho * v_magnitude ** 2 * self.C_D * self.A / m if v_magnitude > 0 else 0
-        drag_x = -drag_magnitude * vx / v_magnitude if v_magnitude > 0 else 0
-        drag_y = -drag_magnitude * vy / v_magnitude if v_magnitude > 0 else 0
+        rho = self.rho_0 * np.exp(-altitude / self.H) # Exponential decay of air density with altitude
+        drag_magnitude = 0.5 * rho * v_magnitude ** 2 * self.C_D * self.A / m if v_magnitude > 0 else 0 # calculating drag force as a function of velocity, density, drag coefficient, and cross-sectional area
+        # calculating the drag in x and y directions by multiplying the scalar magnitude of the drag force by the unit vector in the direction of velocity so that drag is being applied parallel to velocity; then making it negative so that drag is in the opposite direction of velocity/antiparallel
+        drag_x = -drag_magnitude * vx / v_magnitude if v_magnitude > 0 else 0 # if velocity in the x direction is larger than zero (satellite is moving), drag force is in the opposite direction of velocity because drag force is nonconservative force
+        drag_y = -drag_magnitude * vy / v_magnitude if v_magnitude > 0 else 0 # if velocity in the y direction is larger than zero (satellite is moving), drag force is in the opposite direction of velocity because drag force is nonconservative force
 
         # Calculate total acceleration
         ax = a_gravity_x + drag_x + thrust_x
@@ -83,7 +89,7 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
         y_new = y + vy_new * dt
 
         # Update mass based on thrust
-        m_new = max(10, m - 0.01 * thrust_magnitude)
+        m_new = max(10, m - 0.01 * thrust_magnitude) # mass is reduced by 0.01 kg for each unit of thrust applied, but not below 10 kg
 
         # New state
         self.state = np.array([x_new, y_new, vx_new, vy_new, m_new])
@@ -92,9 +98,11 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
 
         # Calculate altitude and velocity for observation
         r_new = np.sqrt(x_new ** 2 + y_new ** 2)
-        print(f"r_new: {r_new}")
+        # print(f"r_new: {r_new}")
         altitude_new = r_new - self.R_E
+        # print(altitude_new)
         v_magnitude_new = np.sqrt(vx_new ** 2 + vy_new ** 2)
+
 
         # Observation: [altitude, velocity_magnitude, mass]
         observation = np.array([altitude_new, v_magnitude_new, m_new])
@@ -102,7 +110,7 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
         # Reward
         altitude_error = abs(altitude_new - self.target_altitude)
         fuel_penalty = 0.1 * thrust_magnitude
-        reward = -1.0 * altitude_error - 0.1 * fuel_penalty
+        reward = -0.01 * altitude_error - 0.1 * fuel_penalty
 
         # Check termination
         done = altitude_new <= 0 or m_new <= 10
@@ -110,13 +118,18 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
         return observation, reward, done, {}
 
     def reset(self):
-        # Desired radius: R_E + (target_altitude + 10000)
+        '''
+        Resets the environment to an initial state and returns the initial observation, so this is the first method called when starting a new episode
+        and defines the initial conditions of the environment.
+        :return:
+        '''
+        # Desired radius: Radius of earth + (target_altitude + 10000)
         desired_radius = self.R_E + self.target_altitude + 10000  # 410,000 m above surface
         # Place satellite on x-axis (y = 0)
         x = desired_radius
         y = 0.0
         # Circular orbit velocity: v = sqrt(G * M_E / r)
-        v_magnitude = 7670.02 # Initial velocity (m/s) for circular orbit
+        v_magnitude = 7660.33 # Initial velocity (m/s) for circular orbit
         # Velocity is perpendicular to radius, so along y-axis (vx = 0, vy = v)
         vx = 0.0
         vy = v_magnitude
@@ -126,6 +139,7 @@ class SatelliteControlEnv(gym.Env):         #creating class that has the basic s
         # Observation: [altitude, velocity_magnitude, mass]
         altitude = desired_radius - self.R_E
         observation = np.array([altitude, v_magnitude, m])
+
         return observation
     
     def render(self):

@@ -6,9 +6,9 @@ import numpy as np
 
 # TRAINING
 env = SatelliteControlEnv()  # Create the environment
-model = PPO("MlpPolicy", env, verbose=1)  # Instantiate the PPO agent
-model.learn(total_timesteps=100000)  # Training the model
-model.save("satellite_rl_model")  # Save the trained model
+model = PPO("MlpPolicy", env, learning_rate=0.0001, verbose=1)  # Instantiate the PPO agent
+model.learn(total_timesteps=5000000)  # Training the model
+model.save("rl_model")  # Save the trained model
 
 # EVALUATION & DATA COLLECTION ACROSS MULTIPLE EPISODES
 n_eval_episodes = 50  # Number of episodes to evaluate
@@ -45,12 +45,12 @@ for episode in range(n_eval_episodes):
 
     # Run the episode
     while not done and step_count < max_steps_per_episode:
-        action, _states = model.predict(obs)  # giving the current observed state of the satellite to the model, which then feeds that to the
+        action, _states = model.predict(obs)  # giving the current observed state of the satellite to the model, which then feeds that to the RL agent and gets an action
 
         # optimized policy network to get the action; that action is then returned
         obs, reward, done, info = env.step(action)  # updating environment by one timestep based on agent's action
 
-        print(f"Episode {episode + 1}: Action={action}, Altitude={obs[0]:.2f}, Velocity={obs[1]:.2f}, Mass={obs[2]:.2f}, Reward={reward:.2f}")
+        print(f"Episode {episode + 1}: Action={action}, Altitude={obs[0]}, Velocity={obs[1]}, Mass={obs[2]}, Reward={reward}")
 
         # Store data
         altitudes.append(obs[0])  # Altitude
