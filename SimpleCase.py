@@ -12,7 +12,7 @@ model.save("rl_model")  # Save the trained model
 
 # EVALUATION & DATA COLLECTION ACROSS MULTIPLE EPISODES
 n_eval_episodes = 50  # Number of episodes to evaluate
-max_steps_per_episode = 1000  # Maximum timesteps per episode
+max_steps_per_episode = 3000  # Maximum timesteps per episode
 
 # Lists to store episode-level metrics
 episode_rewards = []
@@ -29,26 +29,24 @@ best_altitude_error = float('inf')
 best_reward_idx = -1
 best_altitude_idx = -1
 
-for episode in range(n_eval_episodes):
+for episode in range(n_eval_episodes): # Loop through each episode
     # Reset for new episode
     obs = env.reset()
     done = False
-    episode_reward = 0
 
-    # Lists to store timestep data for this episode
-    altitudes = []
-    velocities = []
-    thrusts = []
+    episode_reward = 0 # Initialize reward for the episode
+    altitudes = [] # list to store altitude values for each timestep in the episode
+    velocities = [] # list to store velocity values for each timestep in the episode
+    thrusts = [] # list to store thrust values for each timestep in the episode
 
     initial_mass = obs[2]  # Get initial mass
     step_count = 0
 
-    # Run the episode
-    while not done and step_count < max_steps_per_episode:
+    # Run the actual episode by calculating the action to take at each timestep and then actually taking it
+    while not done and step_count < max_steps_per_episode: # while the episode is not done and the step count is less than the max steps
         action, _states = model.predict(obs)  # giving the current observed state of the satellite to the model, which then feeds that to the RL agent and gets an action
 
-        # optimized policy network to get the action; that action is then returned
-        obs, reward, done, info = env.step(action)  # updating environment by one timestep based on agent's action
+        obs, reward, done, info = env.step(action)  # actually implementing the action / updating environment by one timestep based on agent's action
 
         print(f"Episode {episode + 1}: Action={action}, Altitude={obs[0]}, Velocity={obs[1]}, Mass={obs[2]}, Reward={reward}")
 
@@ -57,11 +55,12 @@ for episode in range(n_eval_episodes):
         velocities.append(obs[1])  # Velocity
         thrusts.append(action[0])  # Thrust
 
-        episode_reward += reward
+        episode_reward += reward # Accumulate reward
         step_count += 1
 
     # Calculate altitude error (average distance from target)
-    altitude_error = np.mean([abs(alt - 400000) for alt in altitudes])
+    altitude_error = np.mean([abs(alt - 400000) for alt in altitudes]) # altitudes is a list of altitude values recorded at each timestep during the episode; for each altitude alt in the list, the absolute difference from
+                                                                        # the target altitude is computed; then np.mean() calculates the mean of these absolute differences for that episode
     episode_altitude_errors.append(altitude_error)
 
     # Store episode results
@@ -81,17 +80,19 @@ for episode in range(n_eval_episodes):
         best_altitude_error = altitude_error
         best_altitude_idx = episode
 
-    print(
-        f"Episode {episode + 1}: Reward={episode_reward:.2f}, Steps={step_count}, Final Altitude={altitudes[-1]:.2f}, Altitude Error={altitude_error:.2f}")
+    print(f"\nEpisode {episode + 1} Summary")
+    print(f"Reward: {episode_reward:.2f}, Steps: {step_count}, Final Altitude: {altitudes[-1]:.2f}m")
+    print(f"Altitude Error: {altitude_error:.2f}m, Fuel Consumed: {initial_mass - obs[2]:.2f}kg")
+    print(f"Altitudes: {[f'{alt:.2f}' for alt in altitudes]}")
+    print(f"Velocities: {[f'{vel:.2f}' for vel in velocities]}")
+    print(f"Thrusts: {[f'{thr:.2f}' for thr in thrusts]}")
+
+    print(f"Episode {episode + 1}: Reward={episode_reward:.2f}, Steps={step_count}, Final Altitude={altitudes[-1]:.2f}, Altitude Error={altitude_error:.2f}")
 
 # Calculate the best overall episode (weighted combination)
 # Normalize metrics to 0-1 range
-norm_rewards = (np.array(episode_rewards) - min(episode_rewards)) / (
-            max(episode_rewards) - min(episode_rewards)) if max(episode_rewards) > min(episode_rewards) else np.zeros(
-    n_eval_episodes)
-norm_errors = 1 - (np.array(episode_altitude_errors) - min(episode_altitude_errors)) / (
-            max(episode_altitude_errors) - min(episode_altitude_errors)) if max(episode_altitude_errors) > min(
-    episode_altitude_errors) else np.zeros(n_eval_episodes)
+norm_rewards = (np.array(episode_rewards) - min(episode_rewards)) / (max(episode_rewards) - min(episode_rewards)) if max(episode_rewards) > min(episode_rewards) else np.zeros(n_eval_episodes)
+norm_errors = 1 - (np.array(episode_altitude_errors) - min(episode_altitude_errors)) / (max(episode_altitude_errors) - min(episode_altitude_errors)) if max(episode_altitude_errors) > min(episode_altitude_errors) else np.zeros(n_eval_episodes)
 
 # Calculate combined score (70% reward, 30% altitude maintenance)
 combined_scores = 0.7 * norm_rewards + 0.3 * norm_errors
