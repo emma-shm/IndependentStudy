@@ -7,7 +7,7 @@ import numpy as np
 # TRAINING
 env = SatelliteControlEnv()  # Create the environment
 model = PPO("MlpPolicy", env, learning_rate=0.0001, verbose=1)  # Instantiate the PPO agent
-model.learn(total_timesteps=5000000)  # Training the model
+model.learn(total_timesteps=10000000)  # Training the model
 model.save("rl_model")  # Save the trained model
 
 # EVALUATION & DATA COLLECTION ACROSS MULTIPLE EPISODES
@@ -25,8 +25,8 @@ episode_altitude_errors = []  # New list to track altitude errors
 
 # Variables to track the best episode
 best_reward = float('-inf')
-best_altitude_error = float('inf')
 best_reward_idx = -1
+best_altitude_error = float('inf')
 best_altitude_idx = -1
 
 for episode in range(n_eval_episodes): # Loop through each episode
@@ -42,7 +42,7 @@ for episode in range(n_eval_episodes): # Loop through each episode
     initial_mass = obs[2]  # Get initial mass
     step_count = 0
 
-    # Run the actual episode by calculating the action to take at each timestep and then actually taking it
+    # Loop through each timestep in the episode -- actually running the episode by calculating the action to take at each timestep and then taking it
     while not done and step_count < max_steps_per_episode: # while the episode is not done and the step count is less than the max steps
         action, _states = model.predict(obs)  # giving the current observed state of the satellite to the model, which then feeds that to the RL agent and gets an action
 
@@ -58,7 +58,7 @@ for episode in range(n_eval_episodes): # Loop through each episode
         episode_reward += reward # Accumulate reward
         step_count += 1
 
-    # Calculate altitude error (average distance from target)
+    # Calculate altitude error (average distance from target) for the given episode
     altitude_error = np.mean([abs(alt - 400000) for alt in altitudes]) # altitudes is a list of altitude values recorded at each timestep during the episode; for each altitude alt in the list, the absolute difference from
                                                                         # the target altitude is computed; then np.mean() calculates the mean of these absolute differences for that episode
     episode_altitude_errors.append(altitude_error)
@@ -72,13 +72,16 @@ for episode in range(n_eval_episodes): # Loop through each episode
     episode_fuel_consumed.append(initial_mass - obs[2])  # Fuel consumed
 
     # Track best episodes
-    if episode_reward > best_reward:
-        best_reward = episode_reward
-        best_reward_idx = episode
+    if episode_reward > best_reward: # check if the current episode's reward is greater than the best reward so far, which is initially the smallest it can be (-inf)
+        best_reward = episode_reward # if so, update the best reward to be the reward of the current episode
+        best_reward_idx = episode # and update the index of the best reward episode to be the current episode, so we can keep track of which episode in the list of episodes had the best reward
+    # at the end of this if statement, best_reward will be the highest reward achieved across all episodes so far, and best_reward_idx will be the index of the episode that achieved that reward
+    # since that episode will be the one that was larger than all previous episodes' rewards
 
-    if altitude_error < best_altitude_error:
-        best_altitude_error = altitude_error
-        best_altitude_idx = episode
+    if altitude_error < best_altitude_error: # check if the current episode's altitude error is less than the best altitude error so far, which is initially the largest it can be (inf)
+        best_altitude_error = altitude_error # if so, update the best altitude error to be the altitude error of the current episode
+        best_altitude_idx = episode # and update the index of the best altitude episode to be the current episode, so we can keep track of which episode in the list of episodes had the best altitude error
+    # at the end of this if statement, best_altitude_error will be the lowest altitude error achieved across all episodes so far, and best_altitude_idx will be the index of the episode that achieved that error
 
     print(f"\nEpisode {episode + 1} Summary")
     print(f"Reward: {episode_reward:.2f}, Steps: {step_count}, Final Altitude: {altitudes[-1]:.2f}m")
@@ -89,30 +92,19 @@ for episode in range(n_eval_episodes): # Loop through each episode
 
     print(f"Episode {episode + 1}: Reward={episode_reward:.2f}, Steps={step_count}, Final Altitude={altitudes[-1]:.2f}, Altitude Error={altitude_error:.2f}")
 
-# Calculate the best overall episode (weighted combination)
-# Normalize metrics to 0-1 range
-norm_rewards = (np.array(episode_rewards) - min(episode_rewards)) / (max(episode_rewards) - min(episode_rewards)) if max(episode_rewards) > min(episode_rewards) else np.zeros(n_eval_episodes)
-norm_errors = 1 - (np.array(episode_altitude_errors) - min(episode_altitude_errors)) / (max(episode_altitude_errors) - min(episode_altitude_errors)) if max(episode_altitude_errors) > min(episode_altitude_errors) else np.zeros(n_eval_episodes)
-
-# Calculate combined score (70% reward, 30% altitude maintenance)
-combined_scores = 0.7 * norm_rewards + 0.3 * norm_errors
-best_overall_idx = np.argmax(combined_scores)
-
 # Print information about the best episodes
 print("\nBest Episodes Summary:")
 print(
     f"Best by reward: Episode {best_reward_idx + 1}, Reward={episode_rewards[best_reward_idx]:.2f}, Altitude Error={episode_altitude_errors[best_reward_idx]:.2f}")
 print(
     f"Best by altitude: Episode {best_altitude_idx + 1}, Reward={episode_rewards[best_altitude_idx]:.2f}, Altitude Error={episode_altitude_errors[best_altitude_idx]:.2f}")
-print(
-    f"Best overall: Episode {best_overall_idx + 1}, Reward={episode_rewards[best_overall_idx]:.2f}, Altitude Error={episode_altitude_errors[best_overall_idx]:.2f}")
 
 # VISUALIZATION ACROSS EPISODES
 
 # 1. Plot reward progression across episodes
 plt.figure(figsize=(10, 6))
 plt.plot(range(1, n_eval_episodes + 1), episode_rewards)
-plt.axvline(x=best_overall_idx + 1, color='g', linestyle='--', label='Best Overall Episode')
+plt.axvline(x=best_reward_idx + 1, color='g', linestyle='--', label='Best Reward Episode')
 plt.xlabel('Episode')
 plt.ylabel('Total Reward')
 plt.title('Reward Progression Across Episodes')
@@ -125,7 +117,7 @@ plt.show()
 plt.figure(figsize=(10, 6))
 plt.plot(range(1, n_eval_episodes + 1), episode_final_altitudes)
 plt.axhline(y=400000, color='r', linestyle='--', label='Target Altitude')
-plt.axvline(x=best_overall_idx + 1, color='g', linestyle='--', label='Best Overall Episode')
+plt.axvline(x=best_altitude_idx + 1, color='b', linestyle='--', label='Best Altitude Episode')
 plt.xlabel('Episode')
 plt.ylabel('Final Altitude (m)')
 plt.title('Final Altitude Achieved in Each Episode')
@@ -137,7 +129,7 @@ plt.show()
 # 3. Plot fuel consumption across episodes
 plt.figure(figsize=(10, 6))
 plt.plot(range(1, n_eval_episodes + 1), episode_fuel_consumed)
-plt.axvline(x=best_overall_idx + 1, color='g', linestyle='--', label='Best Overall Episode')
+plt.axvline(x=best_reward_idx + 1, color='g', linestyle='--', label='Best Reward Episode')
 plt.xlabel('Episode')
 plt.ylabel('Fuel Consumed (kg)')
 plt.title('Fuel Efficiency Across Episodes')
@@ -146,33 +138,66 @@ plt.grid(True)
 plt.savefig("fuel_consumed.png")
 plt.show()
 
-# 4. NEW: Plot trajectory of the best overall episode
+# 4. Plot trajectory of the best reward episode
 plt.figure(figsize=(15, 12))
 
 # Plot altitude trajectory
 plt.subplot(3, 1, 1)
-plt.plot(episode_altitudes[best_overall_idx], linewidth=0.5)
+plt.plot(episode_altitudes[best_reward_idx], linewidth=0.5)
 plt.axhline(y=400000, color='r', linestyle='--', label='Target Altitude')
-plt.title(f"Altitude Trajectory - Best Episode {best_overall_idx + 1}")
+plt.title(f"Altitude Trajectory - Best Reward Episode {best_reward_idx + 1}")
 plt.ylabel('Altitude (m)')
 plt.legend()
 plt.grid(True)
 
 # Plot velocity
 plt.subplot(3, 1, 2)
-plt.plot(episode_velocities[best_overall_idx], linewidth=0.5)
-plt.title(f"Velocity - Best Episode {best_overall_idx + 1}")
+plt.plot(episode_velocities[best_reward_idx], linewidth=0.5)
+plt.title(f"Velocity - Best Reward Episode {best_reward_idx + 1}")
 plt.ylabel('Velocity (m/s)')
 plt.grid(True)
 
 # Plot thrust actions
 plt.subplot(3, 1, 3)
-plt.plot(episode_thrusts[best_overall_idx], linewidth=0.5)
-plt.title(f"Control Actions (Thrust) - Best Episode {best_overall_idx + 1}")
+plt.plot(episode_thrusts[best_reward_idx], linewidth=0.5)
+plt.title(f"Control Actions (Thrust) - Best Reward Episode {best_reward_idx + 1}")
 plt.xlabel('Timestep')
 plt.ylabel('Thrust (m/s²)')
 plt.grid(True)
 
 plt.tight_layout()
-plt.savefig("best_episode_trajectory.png")
+plt.savefig("best_reward_episode_trajectory.png")
+plt.show()
+
+# PLOTTING BEST EPISODES BY ALTITUDE AND REWARD
+
+# 5. Plot trajectory of the best altitude episode
+plt.figure(figsize=(15, 12))
+
+# Plot altitude trajectory
+plt.subplot(3, 1, 1)
+plt.plot(episode_altitudes[best_altitude_idx], linewidth=0.5)
+plt.axhline(y=400000, color='r', linestyle='--', label='Target Altitude')
+plt.title(f"Altitude Trajectory - Best Altitude Episode {best_altitude_idx + 1}")
+plt.ylabel('Altitude (m)')
+plt.legend()
+plt.grid(True)
+
+# Plot velocity
+plt.subplot(3, 1, 2)
+plt.plot(episode_velocities[best_altitude_idx], linewidth=0.5)
+plt.title(f"Velocity - Best Altitude Episode {best_altitude_idx + 1}")
+plt.ylabel('Velocity (m/s)')
+plt.grid(True)
+
+# Plot thrust actions
+plt.subplot(3, 1, 3)
+plt.plot(episode_thrusts[best_altitude_idx], linewidth=0.5)
+plt.title(f"Control Actions (Thrust) - Best Altitude Episode {best_altitude_idx + 1}")
+plt.xlabel('Timestep')
+plt.ylabel('Thrust (m/s²)')
+plt.grid(True)
+
+plt.tight_layout()
+plt.savefig("best_altitude_episode_trajectory.png")
 plt.show()
