@@ -7,7 +7,7 @@ import numpy as np
 # TRAINING
 env = SatelliteControlEnv()  # Create the environment
 model = PPO("MlpPolicy", env, learning_rate=0.0001, verbose=1)  # Instantiate the PPO agent
-model.learn(total_timesteps=10000000)  # Training the model
+model.learn(total_timesteps=1000000)  # Training the model
 model.save("rl_model")  # Save the trained model
 
 # EVALUATION & DATA COLLECTION ACROSS MULTIPLE EPISODES
@@ -94,10 +94,8 @@ for episode in range(n_eval_episodes): # Loop through each episode
 
 # Print information about the best episodes
 print("\nBest Episodes Summary:")
-print(
-    f"Best by reward: Episode {best_reward_idx + 1}, Reward={episode_rewards[best_reward_idx]:.2f}, Altitude Error={episode_altitude_errors[best_reward_idx]:.2f}")
-print(
-    f"Best by altitude: Episode {best_altitude_idx + 1}, Reward={episode_rewards[best_altitude_idx]:.2f}, Altitude Error={episode_altitude_errors[best_altitude_idx]:.2f}")
+print(f"Best by reward: Episode {best_reward_idx + 1}, Reward={episode_rewards[best_reward_idx]:.2f}, Altitude Error={episode_altitude_errors[best_reward_idx]:.2f}")
+print(f"Best by altitude: Episode {best_altitude_idx + 1}, Reward={episode_rewards[best_altitude_idx]:.2f}, Altitude Error={episode_altitude_errors[best_altitude_idx]:.2f}")
 
 # VISUALIZATION ACROSS EPISODES
 
