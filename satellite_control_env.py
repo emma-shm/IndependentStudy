@@ -4,8 +4,8 @@ import numpy as np
 
 
 class SatelliteControlEnv(gym.Env):
-    def __init__(self, target_altitude=400000, max_thrust=100, max_mass=1000):
-        super(SatelliteControlEnv, self).__init__()
+    def __init__(self, target_altitude=400000, max_thrust=1000, max_mass=100):
+        super(SatelliteControlEnv, self).__init__() #
 
         # Mission parameters
         self.target_altitude = target_altitude
@@ -26,7 +26,7 @@ class SatelliteControlEnv(gym.Env):
 
         # Reference densities at key altitudes (CORRECTED for realistic values)
         self.alt_refs = [0, 100e3, 150e3, 200e3, 300e3, 400e3, 500e3, 600e3]
-        self.rho_refs = [1.225, 5.5e-7, 2e-9, 2.5e-10, 1.9e-11, 2.8e-12, 3.8e-13, 1.0e-13]
+        self.rho_refs = [1.225, 5.5e-7, 2e-9, 2.5e-10, 1.9e-11, 1.0e-11, 3.8e-13, 1.0e-13]  # Updated rho_refs[5]
         self.scale_heights = [7500, 22000, 29000, 37000, 45000, 53000, 62000, 71000]
 
         # Solar activity parameters
@@ -122,8 +122,27 @@ class SatelliteControlEnv(gym.Env):
         altitude = r - self.R_E
         v_magnitude = np.sqrt(vx ** 2 + vy ** 2)
 
-        # Convert 1D radial thrust to 2D components
-        radial_thrust = action[0]  # Positive = away from Earth
+        # Solution 1: Create a smooth transition zone around target altitude
+        radial_thrust = action[0]
+
+        # Define transition zone (e.g., ±5km around target)
+        transition_zone = 5000  # 5km
+        upper_limit = self.target_altitude + transition_zone
+        lower_limit = self.target_altitude - transition_zone
+
+        if altitude > upper_limit:
+            # Above target zone: only allow inward thrust
+            radial_thrust = np.clip(radial_thrust, -self.max_thrust, 0)
+        elif altitude < lower_limit:
+            # Below target zone: only allow outward thrust
+            radial_thrust = np.clip(radial_thrust, 0, self.max_thrust)
+        else:
+            # Within transition zone: gradually reduce allowed thrust
+            # Linear interpolation of max allowed thrust based on position in zone
+            zone_position = (altitude - lower_limit) / (2 * transition_zone)  # 0 to 1
+            max_outward = self.max_thrust * (1 - zone_position)
+            max_inward = self.max_thrust * zone_position
+            radial_thrust = np.clip(radial_thrust, -max_inward, max_outward)
 
         # Unit vector pointing away from Earth (radial direction)
         r_hat_x = x / r # dividing the x coordinate of the satellite relative to the center of the Earth by the distance from the center of the Earth
@@ -180,10 +199,19 @@ class SatelliteControlEnv(gym.Env):
         altitude_new = r_new - self.R_E
         v_magnitude_new = np.sqrt(vx_new ** 2 + vy_new ** 2)
 
-        # Reward function - encourage staying close to target altitude
+        # Simple reward focusing on your two core objectives
         altitude_error = abs(altitude_new - self.target_altitude)
-        fuel_penalty = 0.1 * thrust_magnitude
-        reward = -1 * altitude_error - 0.1 * fuel_penalty
+        fuel_used = thrust_magnitude
+
+        reward = -altitude_error / 1000 - 0.1 * fuel_used
+
+        # # Reward function - encourage staying close to target altitude
+        # altitude_error = abs(altitude_new - self.target_altitude)
+        # fuel_penalty = 0.1 * thrust_magnitude
+        #
+        # proximity_reward = 10.0 if altitude_error < 500 else 0.0  # Stronger reward
+        # upward_penalty = 0.1 * max(0, altitude_new - 400000)  # Stronger penalty
+        # reward = -0.1 * altitude_error - 0.1 * fuel_penalty + proximity_reward - upward_penalty
 
         # Check termination conditions
         done = altitude_new <= 0 or m_new <= 10 or altitude_new > 500000
