@@ -199,19 +199,22 @@ class SatelliteControlEnv(gym.Env):
         altitude_new = r_new - self.R_E
         v_magnitude_new = np.sqrt(vx_new ** 2 + vy_new ** 2)
 
-        # Simple reward focusing on your two core objectives
+        # Calculate velocity relative to target (positive = moving away from target)
+        target_radius = self.R_E + self.target_altitude
+        current_radius = np.sqrt(x_new ** 2 + y_new ** 2)
+        radial_velocity = (vx_new * x_new + vy_new * y_new) / current_radius
+
+        # Reward smooth, small corrections rather than large ones
+        thrust_smoothness = -abs(thrust_magnitude) * 0.01  # Gentle fuel penalty
         altitude_error = abs(altitude_new - self.target_altitude)
-        fuel_used = thrust_magnitude
 
-        reward = -altitude_error / 1000 - 0.1 * fuel_used
+        reward = -altitude_error / 5 + thrust_smoothness
 
-        # # Reward function - encourage staying close to target altitude
+        # # Simple reward focusing on your two core objectives
         # altitude_error = abs(altitude_new - self.target_altitude)
-        # fuel_penalty = 0.1 * thrust_magnitude
+        # fuel_used = thrust_magnitude
         #
-        # proximity_reward = 10.0 if altitude_error < 500 else 0.0  # Stronger reward
-        # upward_penalty = 0.1 * max(0, altitude_new - 400000)  # Stronger penalty
-        # reward = -0.1 * altitude_error - 0.1 * fuel_penalty + proximity_reward - upward_penalty
+        # reward = -altitude_error / 1000 - 0.1 * fuel_used
 
         # Check termination conditions
         done = altitude_new <= 0 or m_new <= 10 or altitude_new > 500000
