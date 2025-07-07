@@ -6,7 +6,7 @@ import numpy as np
 
 # TRAINING
 env = SatelliteControlEnv()  # Create the environment
-model = PPO("MlpPolicy", env, n_steps=4096, ent_coef=0.01, gamma=0.9, learning_rate = 10e-2, verbose=1)  # Instantiate the PPO agent
+model = PPO("MlpPolicy", env, tensorboard_log="./ppo_tensorboard/", clip_range=0.2, n_steps=4096, ent_coef=0.01, gamma=0.9, learning_rate = 3e-4, verbose=1, gae_lambda=0.9)  # Instantiate the PPO agent
 model.learn(total_timesteps=1000000)  # Training the model
 model.save("rl_model")  # Save the trained model
 
