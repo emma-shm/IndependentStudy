@@ -205,14 +205,21 @@ class SatelliteControlEnv(gym.Env):
         # radial_velocity = (vx_new * x_new + vy_new * y_new) / current_radius
 
         # Reward smooth, small corrections rather than large ones
-        altitude_error = abs(altitude_new - self.target_altitude)
+        # altitude_error = abs(altitude_new - self.target_altitude)
+        altitude_min = self.target_altitude - 1000
+        altitude_max = self.target_altitude + 1000
+        altitude_error = abs((altitude_new - self.target_altitude) / (altitude_max - altitude_min))
+
         target_velocity = np.sqrt(self.G * self.M_E / self.R_E + self.target_altitude)  # Circular orbit velocity at target altitude
-        velocity_error = abs(v_magnitude_new - target_velocity)
+        velocity_min = target_velocity - 1  # Allow some tolerance
+        velocity_max = target_velocity + 1
+        velocity_error = abs((v_magnitude_new - target_velocity) / (velocity_max - velocity_min))
+        # velocity_error = abs(v_magnitude_new - target_velocity)
 
         # if altitude_error > 20000:
         #     altitude_error == 20000
 
-        reward = -altitude_error/20000 - velocity_error/10 -abs(thrust_magnitude)*0.1 # fuel penalty
+        reward = -altitude_error - velocity_error*0.5 -abs(thrust_magnitude)*0.1 # fuel penalty
         if abs(altitude_error) < 50 and abs(velocity_error) < 0.5:
             reward = reward + 1.0
 

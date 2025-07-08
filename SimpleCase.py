@@ -6,9 +6,12 @@ import numpy as np
 
 # TRAINING
 env = SatelliteControlEnv()  # Create the environment
-model = PPO("MlpPolicy", env, tensorboard_log="./ppo_tensorboard/", clip_range=0.2, n_steps=4096, ent_coef=0.01, gamma=0.9, learning_rate = 3e-4, verbose=1, gae_lambda=0.9)  # Instantiate the PPO agent
+model = PPO("MlpPolicy", env, tensorboard_log="./ppo_tensorboard/", clip_range=0.2, clip_range_vf=0.2, n_steps=4096, vf_coef=0.25, gamma=0.9, learning_rate = 3e-3, verbose=1, gae_lambda=0.9)  # Instantiate the PPO agent
 model.learn(total_timesteps=1000000)  # Training the model
 model.save("rl_model")  # Save the trained model
+
+print('TRAINING COMPLETE')
+print("="*6)
 
 # EVALUATION & DATA COLLECTION ACROSS MULTIPLE EPISODES
 n_eval_episodes = 50  # Number of episodes to evaluate
@@ -50,7 +53,7 @@ for episode in range(n_eval_episodes):  # Loop through each episode
 
         obs, reward, done, info = env.step(action)
 
-        print(f"Episode {episode + 1}: Action={action}, Altitude={obs[0]}, Velocity={obs[1]}, Mass={obs[2]}, Reward={reward}, Drag Force={info['drag_force']}")
+        # print(f"Episode {episode + 1}: Action={action}, Altitude={obs[0]}, Velocity={obs[1]}, Mass={obs[2]}, Reward={reward}, Drag Force={info['drag_force']}")
 
         # Store data
         altitudes.append(obs[0])  # Altitude
@@ -86,16 +89,16 @@ for episode in range(n_eval_episodes):  # Loop through each episode
         best_altitude_error = altitude_error
         best_altitude_idx = episode
 
-    print(f"\nEpisode {episode + 1} Summary")
-    print(f"Reward: {episode_reward:.2f}, Steps: {step_count}, Final Altitude: {altitudes[-1]:.2f}m")
-    print(f"Altitude Error: {altitude_error:.2f}m, Fuel Consumed: {initial_mass - obs[2]:.2f}kg")
-    print(f"Average Drag Force: {average_drag_force:.2e} N")
-    print(f"Altitudes: {[f'{alt:.2f}' for alt in altitudes]}")
-    print(f"Velocities: {[f'{vel:.2f}' for vel in velocities]}")
-    print(f"Thrusts: {[f'{thr:.2f}' for thr in thrusts]}")
-    print(f"Drag Forces: {[f'{df:.2e}' for df in drag_forces]}")
+    # print(f"\nEpisode {episode + 1} Summary")
+    # print(f"Reward: {episode_reward:.2f}, Steps: {step_count}, Final Altitude: {altitudes[-1]:.2f}m")
+    # print(f"Altitude Error: {altitude_error:.2f}m, Fuel Consumed: {initial_mass - obs[2]:.2f}kg")
+    # print(f"Average Drag Force: {average_drag_force:.2e} N")
+    # print(f"Altitudes: {[f'{alt:.2f}' for alt in altitudes]}")
+    # print(f"Velocities: {[f'{vel:.2f}' for vel in velocities]}")
+    # print(f"Thrusts: {[f'{thr:.2f}' for thr in thrusts]}")
+    # print(f"Drag Forces: {[f'{df:.2e}' for df in drag_forces]}")
 
-    print(f"Episode {episode + 1}: Reward={episode_reward:.2f}, Steps={step_count}, Final Altitude={altitudes[-1]:.2f}, Altitude Error={altitude_error:.2f}")
+    print(f"Episode {episode + 1}: Reward={episode_reward:.2f}, Altitude Error={altitude_error:.2f}, Velocity Error={abs(velocities[-1] - 7665.98):.2f}")
 
 # Print information about the best episodes
 print("\nBest Episodes Summary:")
