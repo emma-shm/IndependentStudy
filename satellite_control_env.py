@@ -219,7 +219,8 @@ class SatelliteControlEnv(gym.Env):
         # if altitude_error > 20000:
         #     altitude_error == 20000
 
-        reward = -altitude_error - velocity_error*0.5 -abs(thrust_magnitude)*0.1 # fuel penalty
+        reward = -altitude_error - velocity_error*0.5 - abs(thrust_magnitude)*0.1 # fuel penalty
+        reward = reward / 1000
         if abs(altitude_error) < 50 and abs(velocity_error) < 0.5:
             reward = reward + 1.0
 

@@ -6,7 +6,7 @@ import numpy as np
 
 # TRAINING
 env = SatelliteControlEnv()  # Create the environment
-model = PPO("MlpPolicy", env, tensorboard_log="./ppo_tensorboard/", clip_range=0.2, clip_range_vf=0.2, n_steps=4096, vf_coef=0.25, gamma=0.9, learning_rate = 3e-3, verbose=1, gae_lambda=0.9)  # Instantiate the PPO agent
+model = PPO("MlpPolicy", env, tensorboard_log="./ppo_tensorboard/", clip_range=0.2, clip_range_vf=0.2, n_steps=4096, gamma=0.9, learning_rate = 3e-3, verbose=1, gae_lambda=0.9)  # Instantiate the PPO agent
 model.learn(total_timesteps=1000000)  # Training the model
 model.save("rl_model")  # Save the trained model
 
@@ -98,7 +98,7 @@ for episode in range(n_eval_episodes):  # Loop through each episode
     # print(f"Thrusts: {[f'{thr:.2f}' for thr in thrusts]}")
     # print(f"Drag Forces: {[f'{df:.2e}' for df in drag_forces]}")
 
-    print(f"Episode {episode + 1}: Reward={episode_reward:.2f}, Altitude Error={altitude_error:.2f}, Velocity Error={abs(velocities[-1] - 7665.98):.2f}")
+    print(f"Episode {episode + 1}: Reward={episode_reward:.2f}, Altitude Error={altitude_error:.2f}, Velocity Error={abs(velocities[-1] - 7665.98):.2f}, Thrust Magnitude={abs(action[0]):.2f}")
 
 # Print information about the best episodes
 print("\nBest Episodes Summary:")
